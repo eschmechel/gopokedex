@@ -11,49 +11,48 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eschmechel/gopokedex/internal/pokecache"
+	pokecache "github.com/eschmechel/gopokedex/internal/pokecache"
 )
 
 type cliCommand struct {
-	name						string
-	description			string
-	callback 				func(c *Config) error
+	name        string
+	description string
+	callback    func(c *Config) error
 }
 
 type Config struct {
-	Next string
+	Next     string
 	Previous string
-	cache Cache
+	cache    pokecache.Cache
 }
 
-var supportedCommands = map[string]cliCommand {
+var supportedCommands = map[string]cliCommand{
 	"exit": {
-		name: "exit",
+		name:        "exit",
 		description: "Exit the pokedex",
-		callback: commandExit,
+		callback:    commandExit,
 	},
 	"help": {
-		name: "help",
+		name:        "help",
 		description: "Print info about the pokedex",
-		callback: commandHelp,
+		callback:    commandHelp,
 	},
 	"map": {
-		name: "map",
+		name:        "map",
 		description: "Print 20 location areas",
-		callback: commandMap,
+		callback:    commandMap,
 	},
 	"mapb": {
-		name: "mapb",
+		name:        "mapb",
 		description: "Print the previous 20 location areas",
-		callback: commandMapb,
+		callback:    commandMapb,
 	},
 }
 
 func main() {
-	scanner := bufio.NewScanner(os.Stdin) 
+	scanner := bufio.NewScanner(os.Stdin)
 	cache := pokecache.NewCache(5 * time.Millisecond)
 	config := Config{
-		"https://pokeapi.co/api/v2/location-area/?limit=20", "https://pokeapi.co/api/v2/location-area/?limit=20",cache}
 	for {
 		fmt.Print("Pokedex > ")
 		scanned := scanner.Scan()
@@ -85,25 +84,25 @@ func commandExit(c *Config) error {
 }
 
 func commandHelp(c *Config) error {
-	fmt.Println("Welcome to the Pokedex!\n"+
-		"Usage: \n\n"+
-	"help: Displays a help message\n"+
-	"exit: Exit the pokedex")
+	fmt.Println("Welcome to the Pokedex!\n" +
+		"Usage: \n\n" +
+		"help: Displays a help message\n" +
+		"exit: Exit the pokedex")
 	return nil
 }
 
 type PokeapiArea struct {
-	Count int
-	Next string
+	Count    int
+	Next     string
 	Previous string
-	Results []struct {
+	Results  []struct {
 		Name string
-		Url string
+		URL  string
 	}
 }
 
 func commandMap(c *Config) error {
-	err := mapSubCommand(c,"next")
+	err := mapSubCommand(c, "next")
 	return err
 }
 
@@ -115,10 +114,10 @@ func commandMapb(c *Config) error {
 func mapSubCommand(c *Config, choice string) error {
 	var url string
 	switch choice {
-		case "next":
-			url = c.Next
-		case "previous":
-			url = c.Previous
+	case "next":
+		url = c.Next
+	case "previous":
+		url = c.Previous
 	}
 	res, err := http.Get(url)
 	if err != nil {
@@ -128,8 +127,8 @@ func mapSubCommand(c *Config, choice string) error {
 	defer res.Body.Close()
 	body, err := io.ReadAll(res.Body)
 	if res.StatusCode != http.StatusOK {
-		fmt.Printf("Error with networking request, Status Code: "+res.Status)
-		return errors.New("Error with networking request, Status Code: "+res.Status)
+		fmt.Printf("Error with networking request, Status Code: %s\n", res.Status)
+		return errors.New("Error with networking request, Status Code: " + res.Status)
 	}
 	if err != nil {
 		fmt.Printf("Error with reading HTTP response body, error: %v\n", err)
@@ -152,4 +151,3 @@ func mapSubCommand(c *Config, choice string) error {
 	}
 	return nil
 }
-
