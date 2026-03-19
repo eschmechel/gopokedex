@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,7 +22,7 @@ type cliCommand struct {
 type Config struct {
 	Next     string
 	Previous string
-	cache    pokecache.Cache
+	cache    *pokecache.Cache
 }
 
 var supportedCommands = map[string]cliCommand{
@@ -52,12 +51,12 @@ var supportedCommands = map[string]cliCommand{
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	cache := pokecache.NewCache(5 * time.Millisecond)
-	config := Config{
+	config := Config{"https://pokeapi.co/api/v2/location-area/?limit=20", "https://pokeapi.co/api/v2/location-area/?limit=20", cache}
 	for {
 		fmt.Print("Pokedex > ")
 		scanned := scanner.Scan()
 		if !scanned {
-			fmt.Errorf("Error scanning")
+			fmt.Println("Error scanning")
 		}
 		input := scanner.Text()
 		inputs := strings.Fields(strings.ToLower(input))
@@ -68,7 +67,7 @@ func main() {
 		if cmd, ok := supportedCommands[cmdKey]; ok {
 			if cmd.callback != nil {
 				if err := cmd.callback(&config); err != nil {
-					fmt.Errorf("command error: %v", err)
+					fmt.Printf("command error: %v\n", err)
 				}
 			}
 		} else {
@@ -119,23 +118,40 @@ func mapSubCommand(c *Config, choice string) error {
 	case "previous":
 		url = c.Previous
 	}
-	res, err := http.Get(url)
-	if err != nil {
-		fmt.Printf("Error sending HTTP request, error: %v\n", err)
-		return err
+
+	if url == "" {
+		fmt.Println("No previous page")
+		return nil
 	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(res.Body)
-	if res.StatusCode != http.StatusOK {
-		fmt.Printf("Error with networking request, Status Code: %s\n", res.Status)
-		return errors.New("Error with networking request, Status Code: " + res.Status)
+
+	var body []byte
+
+	if cached, found := c.cache.Get(url); found {
+		body = cached
+	} else {
+		// Make a HTTP Request
+		res, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+		// ignore error
+		defer func() { _ = res.Body.Close() }()
+
+		body, err = io.ReadAll(res.Body)
+		if err != nil {
+			return err
+		}
+
+		if res.StatusCode != http.StatusOK {
+			return fmt.Errorf("error Code: %v", res.StatusCode)
+		}
+
+		// add to cache AFTER reading body
+		c.cache.Add(url, body)
 	}
-	if err != nil {
-		fmt.Printf("Error with reading HTTP response body, error: %v\n", err)
-		return err
-	}
+
 	areas := PokeapiArea{}
-	err = json.Unmarshal(body, &areas)
+	err := json.Unmarshal(body, &areas)
 	if err != nil {
 		fmt.Printf("Error Unmarshaling body, error: %v\n", err)
 	}
