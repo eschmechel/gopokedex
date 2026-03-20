@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -23,6 +24,13 @@ type Config struct {
 	Next     string
 	Previous string
 	cache    *pokecache.Cache
+	Pokedex  map[string]Pokemon
+}
+
+type Pokemon struct {
+	Name           string `json:"name"`
+	ID             int    `json:"id"`
+	BaseExperience int    `json:"base_experience"`
 }
 
 var supportedCommands = map[string]cliCommand{
@@ -51,12 +59,17 @@ var supportedCommands = map[string]cliCommand{
 		description: "Find the pokemon in a location area",
 		callback:    commandExplore,
 	},
+	"catch": {
+		name:        "catch",
+		description: "Catch a pokemon",
+		callback:    commandCatch,
+	},
 }
 
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	cache := pokecache.NewCache(5 * time.Second)
-	config := Config{"https://pokeapi.co/api/v2/location-area/?limit=20", "https://pokeapi.co/api/v2/location-area/?limit=20", cache}
+	config := Config{"https://pokeapi.co/api/v2/location-area/?limit=20", "https://pokeapi.co/api/v2/location-area/?limit=20", cache, make(map[string]Pokemon)}
 	for {
 		fmt.Print("Pokedex > ")
 		scanned := scanner.Scan()
@@ -95,16 +108,6 @@ func commandHelp(c *Config, _ ...string) error {
 	return nil
 }
 
-type PokeapiArea struct {
-	Count    int
-	Next     string
-	Previous string
-	Results  []struct {
-		Name string
-		URL  string
-	}
-}
-
 func commandMap(c *Config, _ ...string) error {
 	err := mapSubCommand(c, "next")
 	return err
@@ -132,6 +135,16 @@ func mapSubCommand(c *Config, choice string) error {
 	body, err := fetchURL(c, url)
 	if err != nil {
 		return err
+	}
+
+	type PokeapiArea struct {
+		Count    int
+		Next     string
+		Previous string
+		Results  []struct {
+			Name string
+			URL  string
+		}
 	}
 
 	areas := PokeapiArea{}
@@ -187,6 +200,40 @@ func commandExplore(c *Config, args ...string) error {
 
 	for _, encounter := range areas.PokemonEncounters {
 		fmt.Println(encounter.Pokemon.Name)
+	}
+	return nil
+}
+
+func commandCatch(c *Config, args ...string) error {
+	if len(args) == 0 {
+		fmt.Println("Please provide a pokemon to catch")
+		return nil
+	}
+	pokemon := args[0]
+	url := fmt.Sprintf("https://pokeapi.co/api/v2/pokemon/%s/", pokemon)
+	body, err := fetchURL(c, url)
+	if err != nil {
+		return err
+	}
+	if len(body) == 0 {
+		fmt.Printf("Error grabbing pokemon, 0 bytes found\n")
+		return nil
+	}
+
+	poke := Pokemon{}
+	err = json.Unmarshal(body, &poke)
+	if err != nil {
+		fmt.Printf("Error unmarshaling body, error: %v\n", err)
+		return err
+	}
+	fmt.Printf("Throwing a Pokeball at %s...\n", pokemon)
+
+	catchProbability := 1.0 / (1.0 + float64(poke.BaseExperience)/100.0)
+	if rand.Float64() < catchProbability {
+		fmt.Printf("%s was caught!\n", pokemon)
+		c.Pokedex[pokemon] = poke
+	} else {
+		fmt.Printf("%s escaped!\n", pokemon)
 	}
 	return nil
 }
