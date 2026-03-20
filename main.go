@@ -16,7 +16,7 @@ import (
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(c *Config) error
+	callback    func(c *Config, args ...string) error
 }
 
 type Config struct {
@@ -46,16 +46,16 @@ var supportedCommands = map[string]cliCommand{
 		description: "Print the previous 20 location areas",
 		callback:    commandMapb,
 	},
-	"explore": cliCommand{
-		name:				 "explore",
-		decription: "Find the pokemon in a location area",
-		callback: commandExplore,
+	"explore": {
+		name:        "explore",
+		description: "Find the pokemon in a location area",
+		callback:    commandExplore,
 	},
 }
 
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
-	cache := pokecache.NewCache(5 * time.Millisecond)
+	cache := pokecache.NewCache(5 * time.Second)
 	config := Config{"https://pokeapi.co/api/v2/location-area/?limit=20", "https://pokeapi.co/api/v2/location-area/?limit=20", cache}
 	for {
 		fmt.Print("Pokedex > ")
@@ -71,7 +71,7 @@ func main() {
 		cmdKey := inputs[0]
 		if cmd, ok := supportedCommands[cmdKey]; ok {
 			if cmd.callback != nil {
-				if err := cmd.callback(&config); err != nil {
+				if err := cmd.callback(&config, inputs[1:]...); err != nil {
 					fmt.Printf("command error: %v\n", err)
 				}
 			}
@@ -81,13 +81,13 @@ func main() {
 	}
 }
 
-func commandExit(c *Config) error {
+func commandExit(c *Config, _ ...string) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 
-func commandHelp(c *Config) error {
+func commandHelp(c *Config, _ ...string) error {
 	fmt.Println("Welcome to the Pokedex!\n" +
 		"Usage: \n\n" +
 		"help: Displays a help message\n" +
@@ -105,12 +105,12 @@ type PokeapiArea struct {
 	}
 }
 
-func commandMap(c *Config) error {
+func commandMap(c *Config, _ ...string) error {
 	err := mapSubCommand(c, "next")
 	return err
 }
 
-func commandMapb(c *Config) error {
+func commandMapb(c *Config, _ ...string) error {
 	err := mapSubCommand(c, "previous")
 	return err
 }
@@ -121,13 +121,13 @@ func mapSubCommand(c *Config, choice string) error {
 	case "next":
 		url = c.Next
 	case "previous":
-		url = c.Previous 
+		url = c.Previous
 	}
 
 	if url == "" {
 		fmt.Println("No previous page")
 		return nil
-}
+	}
 
 	body, err := fetchURL(c, url)
 	if err != nil {
@@ -135,12 +135,12 @@ func mapSubCommand(c *Config, choice string) error {
 	}
 
 	areas := PokeapiArea{}
-	err := json.Unmarshal(body, &areas)
+	err = json.Unmarshal(body, &areas)
 	if err != nil {
 		fmt.Printf("Error Unmarshaling body, error: %v\n", err)
 	}
 	if len(areas.Results) == 0 {
-		fmt.Printfi("Error grabbing areas, 0 areas found\n")
+		fmt.Printf("Error grabbing areas, 0 areas found\n")
 		return nil
 	}
 	c.Next = areas.Next
@@ -152,57 +152,65 @@ func mapSubCommand(c *Config, choice string) error {
 	return nil
 }
 
-func commandExplore(c *Config, locationArea string) error {
-	
-	if locationArea == "" {
+func commandExplore(c *Config, args ...string) error {
+	if len(args) == 0 {
 		fmt.Println("Please provide a location area")
 		return nil
 	}
+	locationArea := args[0]
 
 	URL := fmt.Sprintf("https://pokeapi.co/api/v2/location-area/%s/", locationArea)
-	
-	body, err := fetchURL(c,URL)
+
+	body, err := fetchURL(c, URL)
 	if err != nil {
 		return err
 	}
-	var area struct {
-		pokemon_encounters []struct {
-			pokemon struct {
-				name string
-				url string
-			}
-		}
+
+	type area struct {
+		PokemonEncounters []struct {
+			Pokemon struct {
+				Name string `json:"name"`
+				URL  string `json:"url"`
+			} `json:"pokemon"`
+		} `json:"pokemon_encounters"`
 	}
-	
-	for _, encounter := range area.pokemon_encounters {
-		fmt.Println(encounter.pokemon.name)
+	areas := area{}
+	err = json.Unmarshal(body, &areas)
+	if err != nil {
+		fmt.Printf("Error unmarshaling body, error: %v\n", err)
+		return err
+	}
+	if len(areas.PokemonEncounters) == 0 {
+		fmt.Printf("Error grabbing encounters, 0 encounters found\n")
+		return nil
+	}
+
+	for _, encounter := range areas.PokemonEncounters {
+		fmt.Println(encounter.Pokemon.Name)
 	}
 	return nil
 }
 
 func fetchURL(c *Config, url string) ([]byte, error) {
-
-	if cached []byte, found bool := c.cache.Get(URL)
-		body = cached
-	} else {
-		res *http.Response, err := http.Get(URL)
-		if err != nil {
-			return nil,err
-		}
-		//ignore error
-		defer func() { _ = res.Body.Close() }()
-		
-		body, err := io.ReadAll(res.Body)
-		if err != nil {
-			return nil,err
-		}
-
-		if res.StatusCode != http.StatusOK {
-			return nil,fmt.Errorf("error code: %v", res.StatusCode)
-		}
-
-		c.cache.Add(URL, body)
+	if cached, found := c.cache.Get(url); found {
+		return cached, nil
 	}
 
+	res, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("error code: %v", res.StatusCode)
+	}
+
+	c.cache.Add(url, body)
 	return body, nil
 }
