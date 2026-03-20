@@ -46,6 +46,11 @@ var supportedCommands = map[string]cliCommand{
 		description: "Print the previous 20 location areas",
 		callback:    commandMapb,
 	},
+	"explore": cliCommand{
+		name:				 "explore",
+		decription: "Find the pokemon in a location area",
+		callback: commandExplore,
+	},
 }
 
 func main() {
@@ -116,38 +121,17 @@ func mapSubCommand(c *Config, choice string) error {
 	case "next":
 		url = c.Next
 	case "previous":
-		url = c.Previous
+		url = c.Previous 
 	}
 
 	if url == "" {
 		fmt.Println("No previous page")
 		return nil
-	}
+}
 
-	var body []byte
-
-	if cached, found := c.cache.Get(url); found {
-		body = cached
-	} else {
-		// Make a HTTP Request
-		res, err := http.Get(url)
-		if err != nil {
-			return err
-		}
-		// ignore error
-		defer func() { _ = res.Body.Close() }()
-
-		body, err = io.ReadAll(res.Body)
-		if err != nil {
-			return err
-		}
-
-		if res.StatusCode != http.StatusOK {
-			return fmt.Errorf("error Code: %v", res.StatusCode)
-		}
-
-		// add to cache AFTER reading body
-		c.cache.Add(url, body)
+	body, err := fetchURL(c, url)
+	if err != nil {
+		return err
 	}
 
 	areas := PokeapiArea{}
@@ -156,7 +140,7 @@ func mapSubCommand(c *Config, choice string) error {
 		fmt.Printf("Error Unmarshaling body, error: %v\n", err)
 	}
 	if len(areas.Results) == 0 {
-		fmt.Printf("Error grabbing areas, 0 areas found\n")
+		fmt.Printfi("Error grabbing areas, 0 areas found\n")
 		return nil
 	}
 	c.Next = areas.Next
@@ -166,4 +150,59 @@ func mapSubCommand(c *Config, choice string) error {
 		fmt.Println(area.Name)
 	}
 	return nil
+}
+
+func commandExplore(c *Config, locationArea string) error {
+	
+	if locationArea == "" {
+		fmt.Println("Please provide a location area")
+		return nil
+	}
+
+	URL := fmt.Sprintf("https://pokeapi.co/api/v2/location-area/%s/", locationArea)
+	
+	body, err := fetchURL(c,URL)
+	if err != nil {
+		return err
+	}
+	var area struct {
+		pokemon_encounters []struct {
+			pokemon struct {
+				name string
+				url string
+			}
+		}
+	}
+	
+	for _, encounter := range area.pokemon_encounters {
+		fmt.Println(encounter.pokemon.name)
+	}
+	return nil
+}
+
+func fetchURL(c *Config, url string) ([]byte, error) {
+
+	if cached []byte, found bool := c.cache.Get(URL)
+		body = cached
+	} else {
+		res *http.Response, err := http.Get(URL)
+		if err != nil {
+			return nil,err
+		}
+		//ignore error
+		defer func() { _ = res.Body.Close() }()
+		
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			return nil,err
+		}
+
+		if res.StatusCode != http.StatusOK {
+			return nil,fmt.Errorf("error code: %v", res.StatusCode)
+		}
+
+		c.cache.Add(URL, body)
+	}
+
+	return body, nil
 }
