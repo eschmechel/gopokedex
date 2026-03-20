@@ -31,6 +31,21 @@ type Pokemon struct {
 	Name           string `json:"name"`
 	ID             int    `json:"id"`
 	BaseExperience int    `json:"base_experience"`
+	Height         int    `json:"height"`
+	Weight         int    `json:"weight"`
+	Stats          []struct {
+		BaseStat int `json:"base_stat"`
+		Effort   int `json:"effort"`
+		Stat     struct {
+			Name string `json:"name"`
+		} `json:"stat"`
+	} `json:"stats"`
+	Types []struct {
+		Slot int `json:"slot"`
+		Type struct {
+			Name string `json:"name"`
+		} `json:"type"`
+	} `json:"types"`
 }
 
 var supportedCommands = map[string]cliCommand{
@@ -63,6 +78,11 @@ var supportedCommands = map[string]cliCommand{
 		name:        "catch",
 		description: "Catch a pokemon",
 		callback:    commandCatch,
+	},
+	"inspect": {
+		name:        "inspect",
+		description: "Inspect a pokemon in your pokedex",
+		callback:    commandInspect,
 	},
 }
 
@@ -234,6 +254,23 @@ func commandCatch(c *Config, args ...string) error {
 		c.Pokedex[pokemon] = poke
 	} else {
 		fmt.Printf("%s escaped!\n", pokemon)
+	}
+	return nil
+}
+
+func commandInspect(c *Config, args ...string) error {
+	if len(args) == 0 {
+		fmt.Println("Please provide a pokemon to inspect")
+		return nil
+	}
+	pokemon := args[0]
+	if poke, found := c.Pokedex[pokemon]; found {
+		fmt.Printf("Name: %v\nWeight: %v\nStats:\n\t-hp: %v\n\t-attack: %v\n\t-defense: %v\n\t-special-attack: %v\n\t-special-defense: %v\n\t-speed: %v\nTypes:\n", poke.Name, poke.Height, poke.Weight, poke.Stats[0].BaseStat, poke.Stats[1].BaseStat, poke.Stats[2].BaseStat, poke.Stats[3].BaseStat, poke.Stats[4].BaseStat)
+		for _, t := range poke.Types {
+			fmt.Printf("\t-%v\n", t.Type.Name)
+		}
+	} else {
+		fmt.Printf("you have not caught that pokemon\n")
 	}
 	return nil
 }
